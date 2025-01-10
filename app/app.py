@@ -1,10 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
+from flask_cors import CORS
 from interpreter import interpreter
 import logging
 import os
+from datetime import datetime
 
 # Initialize Flask application
 app = Flask(__name__)
+CORS(app)  # Enable CORS for frontend-backend communication
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")  # Secret key for session management
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +52,12 @@ def configure_interpreter():
 
 configure_interpreter()
 
+# Store conversation history in session
+def get_conversation_history():
+    if 'conversation_history' not in session:
+        session['conversation_history'] = []
+    return session['conversation_history']
+
 # Create an endpoint for chat
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -73,6 +83,15 @@ def chat():
         logger.info(f"Processing prompt: {prompt}")
         full_response = ""
         
+        # Add user message to conversation history
+        conversation_history = get_conversation_history()
+        conversation_history.append({
+            "role": "user",
+            "content": prompt,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Process the prompt with the interpreter
         for chunk in interpreter.chat(prompt, stream=True, display=False):
             if isinstance(chunk, dict):
                 if chunk.get("type") == "message":
@@ -84,8 +103,18 @@ def chat():
             else:
                 logger.warning(f"Unexpected chunk type: {type(chunk)}")
         
+        # Add assistant response to conversation history
+        conversation_history.append({
+            "role": "assistant",
+            "content": full_response.strip(),
+            "timestamp": datetime.now().isoformat()
+        })
+        
         logger.info("Response generated successfully.")
-        return jsonify({"response": full_response.strip()})
+        return jsonify({
+            "response": full_response.strip(),
+            "conversation_history": conversation_history
+        })
     
     except json.JSONDecodeError as e:
         logger.warning(f"Invalid JSON payload: {str(e)}")
@@ -93,6 +122,15 @@ def chat():
     except Exception as e:
         logger.error(f"Error during chat processing: {str(e)}")
         return jsonify({"error": "Internal server error."}), 500
+
+# Endpoint to fetch conversation history
+@app.route('/history', methods=['GET'])
+def get_history():
+    """
+    Endpoint to fetch the conversation history.
+    """
+    conversation_history = get_conversation_history()
+    return jsonify({"conversation_history": conversation_history})
 
 if __name__ == '__main__':
     port = int(os.getenv("FLASK_PORT", 5000))
