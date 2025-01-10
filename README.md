@@ -1,7 +1,3 @@
-Here’s a **README.md** file for your project. It provides an overview of the application, setup instructions, and usage details.
-
----
-
 # Open Interpreter Chat App
 
 A simple web-based chat application powered by Open Interpreter. This app allows users to interact with an AI interpreter, save conversations, and start new chats. It features a clean UI with a sidebar for managing past conversations.
