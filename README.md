@@ -94,7 +94,7 @@ The app uses the following environment variables:
 
 Example:
 ```bash
-export FLASK_PORT=5001
+export FLASK_PORT=5000
 export FLASK_DEBUG=True
 ```
 
