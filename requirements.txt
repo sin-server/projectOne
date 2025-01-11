@@ -2,3 +2,4 @@ open-interpreter
 flask
 chromadb
 ollama
+sqlalchemy
