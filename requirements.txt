@@ -1,2 +1,4 @@
 open-interpreter
 flask
+chromadb
+ollama
