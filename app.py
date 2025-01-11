@@ -23,12 +23,12 @@ def configure_interpreter():
     interpreter.llm.api_base = "https://chat.musicheardworldwide.com/api"
     interpreter.llm.api_key = "sk-715370e4191e460ebb96ad7e3c748cbc"
     interpreter.llm.api_version = "2.0.2"
-    interpreter.llm.supports_functions = True
+    interpreter.llm.supports_functions = False
     interpreter.llm.supports_vision = False
     interpreter.system_message = "You are Open Interpreter..."
     interpreter.custom_instructions = "This is a custom instruction."
     interpreter.verbose = True
-    interpreter.safe_mode = 'ask'
+    interpreter.safe_mode = False
     interpreter.auto_run = True
     interpreter.anonymized_telemetry = False  # Disable telemetry
 
