@@ -31,6 +31,7 @@ def configure_interpreter():
     interpreter.safe_mode = False
     interpreter.auto_run = True
     interpreter.anonymized_telemetry = False  # Disable telemetry
+    interpreter.loop = True
 
     # Interpreter execution instructions
     interpreter.llm.execution_instructions = (
