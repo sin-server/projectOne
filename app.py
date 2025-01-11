@@ -3,11 +3,6 @@ from interpreter import interpreter
 import logging
 import os
 from datetime import datetime
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from models import Base, Conversation, Message, Embedding
-import requests
-import json
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -16,18 +11,10 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Database setup
-DATABASE_URL = "sqlite:///sin.db"  # Replace with PostgreSQL URL if using Supabase
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Create tables
-Base.metadata.create_all(engine)
-
 # Configure the interpreter
 def configure_interpreter():
-    interpreter.offline = False
+    """Configure the interpreter settings."""
+    interpreter.offline = False  # Offline mode enabled
     interpreter.llm.model = "openai/sin"
     interpreter.llm.temperature = 0.7
     interpreter.llm.context_window = 100000
@@ -35,74 +22,111 @@ def configure_interpreter():
     interpreter.llm.max_output = 10000
     interpreter.llm.api_base = "https://chat.musicheardworldwide.com/api"
     interpreter.llm.api_key = "sk-715370e4191e460ebb96ad7e3c748cbc"
-    interpreter.system_message = "You are Open Interpreter for projectOne..."
+    interpreter.llm.api_version = "2.0.2"
+    interpreter.llm.supports_functions = False
+    interpreter.llm.supports_vision = False
+    interpreter.system_message = "You are Open Interpreter..."
+    interpreter.custom_instructions = "This is a custom instruction."
     interpreter.verbose = True
+    interpreter.safe_mode = False
     interpreter.auto_run = True
+    interpreter.anonymized_telemetry = False  # Disable telemetry
+    interpreter.loop = True
+    interpreter.computer.import_computer_api = True
 
+    # Interpreter execution instructions
+    interpreter.llm.execution_instructions = (
+        "To execute code on the user's machine, write a markdown code block. "
+        "Specify the language after the ```. You will receive the output. Use any programming language."
+    )
+
+# Configure the interpreter on startup
 configure_interpreter()
 
-# Embedding API setup
-EMBEDDING_API_URL = "https://api.musicheardworldwide.com/embeddings"
-
-def get_embedding(prompt):
-    payload = {"model": "text", "prompt": prompt}
-    response = requests.post(EMBEDDING_API_URL, json=payload)
-    if response.status_code == 200:
-        return response.json()["embedding"]
-    else:
-        raise Exception(f"Embedding API error: {response.text}")
+# In-memory storage for conversations (replace with a database for persistence)
+conversations = {}
+current_conversation_id = None  # Tracks the active conversation
 
 @app.route('/')
 def index():
+    """Serve the chat interface."""
     return render_template('index.html')
+
+@app.route('/conversations', methods=['GET'])
+def get_conversations():
+    """Return a list of past conversations."""
+    return jsonify([{"id": id, "title": conv["title"]} for id, conv in conversations.items()])
+
+@app.route('/conversation/<conversation_id>', methods=['GET'])
+def get_conversation(conversation_id):
+    """Return a specific conversation by ID."""
+    if conversation_id in conversations:
+        return jsonify(conversations[conversation_id])
+    else:
+        return jsonify({"error": "Conversation not found"}), 404
 
 @app.route('/new_chat', methods=['POST'])
 def new_chat():
+    """Start a new conversation."""
     global current_conversation_id
     if current_conversation_id:
+        # Save the current conversation before starting a new one
         conversations[current_conversation_id]["end_time"] = datetime.now().strftime('%Y-%m-%d %H:%M')
-    conversation = Conversation(
-        title=f"Conversation {len(conversations) + 1}",
-        start_time=datetime.now()
-    )
-    session.add(conversation)
-    session.commit()
-    current_conversation_id = conversation.id
+    current_conversation_id = str(len(conversations) + 1)
+    conversations[current_conversation_id] = {
+        "title": f"Conversation {current_conversation_id} - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "start_time": datetime.now().strftime('%Y-%m-%d %H:%M'),
+        "messages": []
+    }
     return jsonify({"conversation_id": current_conversation_id})
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    """Handle chat requests and store messages in the current conversation."""
     global current_conversation_id
     try:
         data = request.get_json()
         prompt = data.get('prompt')
+
         if not prompt:
             return jsonify({"error": "No prompt provided"}), 400
 
+        # If no conversation exists, start a new one
         if not current_conversation_id:
             new_chat()
 
-        user_embedding = get_embedding(prompt)
-        response = interpreter.chat(prompt)
-        bot_embedding = get_embedding(response)
+        # Process the prompt using the interpreter
+        full_response = ""
+        for chunk in interpreter.chat(prompt, stream=True, display=False):
+            if isinstance(chunk, dict):
+                if chunk.get("type") == "message":
+                    full_response += chunk.get("content", "")
+                elif chunk.get("type") == "code":
+                    full_response += f"```\n{chunk.get('content', '')}\n```\n"
+            elif isinstance(chunk, str):
+                full_response += chunk
+            else:
+                logger.warning(f"Unexpected chunk type: {type(chunk)}")
 
-        conversation = session.query(Conversation).get(current_conversation_id)
-        user_message = Message(conversation=conversation, role='user', content=prompt)
-        bot_message = Message(conversation=conversation, role='bot', content=response)
-        session.add_all([user_message, bot_message])
+        # Clean up the response (remove unnecessary backticks)
+        full_response = full_response.replace("``` ``` ```", "```").replace("``` ```", "```")
 
-        session.add_all([
-            Embedding(document=prompt, embedding=json.dumps(user_embedding), conversation=conversation),
-            Embedding(document=response, embedding=json.dumps(bot_embedding), conversation=conversation)
-        ])
-        session.commit()
+        # Store the prompt and response in the current conversation
+        conversations[current_conversation_id]["messages"].append(
+            {"role": "user", "content": prompt}
+        )
+        conversations[current_conversation_id]["messages"].append(
+            {"role": "bot", "content": full_response.strip()}
+        )
 
-        return jsonify({"response": response, "conversation_id": current_conversation_id})
+        return jsonify({"response": full_response.strip(), "conversation_id": current_conversation_id})
+
     except Exception as e:
-        logger.error(f"Error during chat: {e}")
+        logger.error(f"Error during chat processing: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv("FLASK_PORT", 5000))
     debug = os.getenv("FLASK_DEBUG", "False").lower() == "true"
+    logger.info(f"Open Interpreter server is running on http://0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=debug)
