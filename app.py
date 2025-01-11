@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Configure the interpreter
 def configure_interpreter():
     """Configure the interpreter settings."""
-    interpreter.offline = True  # Offline mode enabled
+    interpreter.offline = False  # Offline mode enabled
     interpreter.llm.model = "openai/sin"
     interpreter.llm.temperature = 0.7
     interpreter.llm.context_window = 100000
